@@ -6,3 +6,6 @@ hadio/
 *.hex
 *.bin
 *.map
+
+old/
+sim/
