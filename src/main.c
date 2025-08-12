@@ -1,6 +1,9 @@
 /*
 	Capacitive candle flicker sensing.
 
+	Detects flicker events in an oscillating candle to derive a 
+	1Hz frequency for LED blinking.
+
 	cpldcpu July 2025
 
 	Based on the CH32V003 touch sensing example code.
@@ -10,7 +13,7 @@
 		* Start the ADC
 		* Use the internal pull-up to pull the line high.
 		* The ADC will sample the voltage on the slope.
-		* Lower voltage = longer RC respone, so higher capacitance. 
+		* Lower voltage = longer RC response, so higher capacitance. 
 */
 
 #include "ch32fun.h"
@@ -49,29 +52,24 @@ int main()
 
 	while(1)
 	{
-		uint32_t sum[8] = { 0 };
-		uint32_t start = SysTick->CNT;
-
+		uint32_t sum;
 		int iterations = 32;
-		sum[0] += ReadTouchPin( GPIOA, 2, 0, iterations );
-		
-		uint32_t end = SysTick->CNT;
+		sum = ReadTouchPin( GPIOA, 2, 0, iterations );
 	
-		if (avg == 0) { avg = sum[0];} // initialize avg on first run
+		if (avg == 0) { avg = sum;} // initialize avg on first run
+		avg = avg - (avg>>5) + sum; // simple low-pass filter
+		hp = sum -  (avg>>5); // high-pass filter
 
-		avg = avg - (avg>>5) + sum[0]; // simple low-pass filter
-		hp = sum[0] -  (avg>>5); // high-pass filter
-
-		// Zero crossing detector with 4-sample dead time
+		// Zero crossing detector with dead time
 		if (dead_time_counter > 0) {
 			dead_time_counter--;  // Count down dead time
 			zero_cross = 0;  // No detection during dead time
 		} else {
 			// Check for positive zero crossing (sign change)
 			if ((hp_prev < 0 && hp >= 0)) {
-				zero_cross = 1;  // Zero crossing detected
-				dead_time_counter = 4;  // Start dead time
-				time_accumulator += interval;  // Increment time accumulator
+				zero_cross = 1;  
+				dead_time_counter = 4;  
+				time_accumulator += interval;  
 				
 				// LED blinking logic using time accumulator
 				// Check if time accumulator has reached LED toggle threshold
@@ -93,7 +91,7 @@ int main()
 		
 		hp_prev = hp;  // Store current hp for next iteration
 
-		printf( "%d\t%d\t%d\t%d\n", (int)sum[0], (int)avg, (int)hp, (int)zero_cross );
+		printf( "%d\t%d\t%d\t%d\n", (int)sum, (int)avg, (int)hp, (int)zero_cross );
 	}
 }
 
