@@ -2,6 +2,11 @@
 
 Detecting candle flame flicker using only a few wires and a CH32V003 microcontroller. 
 
+
+<p align="center">
+  <img src="media/flameosc_small.gif" alt="Device overview"/>
+</p>
+
 ## Overview
 
 This project uses the ADC in the MCU to implement a capacitive sensor that is able to detect motion of a candle flame and can extract the flicker frequency. The system samples the capacitive sensor, applies filtering and signal processing, and outputs processed data for analysis via the CH32Fun framework.
@@ -92,6 +97,13 @@ git clone --recursive <repository-url>
 ```
 
 ### Build Commands
+```bash
+# Build and flash firmware
+make flash
+
+# Monitor output (requires appropriate permissions)
+make monitor
+```
 ```bash
 # Build and flash firmware
 make flash
