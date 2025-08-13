@@ -9,3 +9,6 @@ hadio/
 
 old/
 sim/
+.vscode/
+report/
+.claude/
