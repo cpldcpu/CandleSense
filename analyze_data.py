@@ -10,6 +10,7 @@ import numpy as np
 import sys
 from scipy import signal
 from scipy.optimize import curve_fit
+from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 
 def gaussian(x, amplitude, mean, stddev, offset):
     """Gaussian function for peak fitting"""
@@ -63,6 +64,53 @@ def fit_gaussian_peak(freqs, psd, peak_idx, window_size=10):
         # Fitting failed, return original peak
         return freqs[peak_idx], None, False
 
+def plot_psd_with_gaussian(data, fs, ax, label_base, curve_color, peak_color,
+                           min_freq=3.0, window_size=15, nperseg=1024,
+                           title_suffix=''):
+    """
+    Compute PSD, fit Gaussian to dominant peak above min_freq, and plot.
+    Returns: peak frequency (float) or None.
+    """
+    freqs, psd = signal.welch(data, fs=fs, nperseg=nperseg)
+    ax.semilogy(freqs, psd, color=curve_color, label=f'{label_base} PSD')
+    freq_mask = freqs > min_freq
+    peak_freq_final = None
+    if np.any(freq_mask):
+        freqs_sel = freqs[freq_mask]
+        psd_sel = psd[freq_mask]
+        local_idx = np.argmax(psd_sel)
+        global_idx = np.where(freq_mask)[0][local_idx]
+        raw_peak_freq = freqs_sel[local_idx]
+        raw_peak_val = psd_sel[local_idx]
+        fitted_freq, fitted_params, fit_success = fit_gaussian_peak(freqs, psd, global_idx, window_size=window_size)
+        if fit_success:
+            print(f"{label_base} raw peak: {raw_peak_freq:.2f} Hz")
+            print(f"{label_base} Gaussian fitted peak: {fitted_freq:.3f} Hz (PSD: {raw_peak_val:.2e})")
+            print(f"{label_base} peak fitting improvement: {abs(fitted_freq - raw_peak_freq):.3f} Hz")
+            ax.plot(fitted_freq, gaussian(fitted_freq, *fitted_params), marker='o',
+                    color=peak_color, markersize=7, label=f'{label_base} fitted peak: {fitted_freq:.3f} Hz')
+            ax.axvline(fitted_freq, color=peak_color, linestyle='--', alpha=0.7)
+            # Gaussian curve
+            freq_fine = np.linspace(fitted_freq - 2, fitted_freq + 2, 200)
+            freq_fine = freq_fine[(freq_fine >= freqs[0]) & (freq_fine <= freqs[-1])]
+            if len(freq_fine):
+                ax.plot(freq_fine, gaussian(freq_fine, *fitted_params),
+                        linestyle='--', color=peak_color, alpha=0.6, linewidth=1,
+                        label=f'{label_base} Gaussian fit')
+            peak_freq_final = fitted_freq
+        else:
+            print(f"{label_base} Gaussian fitting failed, using raw peak: {raw_peak_freq:.2f} Hz (PSD: {raw_peak_val:.2e})")
+            ax.plot(raw_peak_freq, raw_peak_val, marker='o', color=peak_color,
+                    markersize=7, label=f'{label_base} peak: {raw_peak_freq:.2f} Hz')
+            ax.axvline(raw_peak_freq, color=peak_color, linestyle='--', alpha=0.7)
+            peak_freq_final = raw_peak_freq
+        ax.legend()
+    else:
+        print(f"No {label_base} frequency data above {min_freq} Hz available")
+    ax.set_title(f'PSD ({label_base}){title_suffix}')
+    ax.grid(True, alpha=0.3)
+    return peak_freq_final
+
 if len(sys.argv) < 2:
     print("Usage: python3 analyze_data.py <csv_file>")
     sys.exit(1)
@@ -78,97 +126,77 @@ if 'timestamp' in df.columns:
     df['time_seconds'] = (df['timestamp'] - df['timestamp'].iloc[0]).dt.total_seconds()
 
 # Create plots
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+fig = plt.figure(figsize=(18, 6))
 fig.suptitle('Capacitive Flicker Sensor Analysis', fontsize=16)
+gs = GridSpec(1, 3, width_ratios=[1, 1, 1], figure=fig)
+ax_raw = fig.add_subplot(gs[0, 0])
+ax_flicker = fig.add_subplot(gs[0, 1])
+
+# Nested grid for PSD (third column split vertically)
+gs_psd = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[0, 2], hspace=0.05)
+ax_psd_raw = fig.add_subplot(gs_psd[0, 0])
+ax_psd_hp = fig.add_subplot(gs_psd[1, 0], sharex=ax_psd_raw)
 
 # Plot 1: Raw data and average over time
-axes[0].plot(df.index, df['raw'], 'b-', alpha=0.7, linewidth=0.5, label='Raw')
-axes[0].plot(df.index, df['avg'] // 32, 'r-', alpha=0.8, linewidth=0.8, label='Average (÷32)')
-axes[0].set_title('Raw ADC Values & Filtered Average')
-axes[0].set_xlabel('Sample')
-axes[0].set_ylabel('ADC Value')
-axes[0].legend()
-axes[0].grid(True, alpha=0.3)
+ax_raw.plot(df.index, df['raw'], 'b-', alpha=0.7, linewidth=0.5, label='Raw')
+ax_raw.plot(df.index, df['avg'] // 32, 'r-', alpha=0.8, linewidth=0.8, label='Average (÷32)')
+ax_raw.set_title('Raw ADC Values & Filtered Average')
+ax_raw.set_xlabel('Sample')
+ax_raw.set_ylabel('ADC Value')
+ax_raw.legend()
+ax_raw.grid(True, alpha=0.3)
 
 # Plot 2: flicker detection signal with zero crossings
-axes[1].plot(df.index, df['hp'], 'g-', alpha=0.7, linewidth=0.5, label='Flicker Signal')
+ax_flicker.plot(df.index, df['hp'], 'g-', alpha=0.7, linewidth=0.5, label='Flicker Signal')
 zero_cross_indices = df.index[df['zero_cross'] == 1]
 if len(zero_cross_indices) > 0:
-    axes[1].scatter(zero_cross_indices, df.loc[zero_cross_indices, 'hp'], 
-                   color='red', s=30, marker='x', label='Zero Crossings', zorder=5, linewidth=2)
-axes[1].axhline(y=0, color='k', linestyle='--', alpha=0.5)
-axes[1].set_title('Flicker Detection Signal + Zero Crossings')
-axes[1].set_xlabel('Sample')
-axes[1].set_ylabel('Flicker Delta')
-axes[1].legend()
-axes[1].grid(True, alpha=0.3)
+    ax_flicker.scatter(
+        zero_cross_indices,
+        df.loc[zero_cross_indices, 'hp'],
+        color='red',
+        s=30,
+        marker='x',
+        label='Zero Crossings',
+        zorder=5,
+        linewidth=2
+    )
+ax_flicker.axhline(y=0, color='k', linestyle='--', alpha=0.5)
+ax_flicker.set_title('Flicker Detection Signal + Zero Crossings')
+ax_flicker.set_xlabel('Sample')
+ax_flicker.set_ylabel('Flicker Delta')
+ax_flicker.legend()
+ax_flicker.grid(True, alpha=0.3)
 
-# Plot 3: Frequency analysis of raw signal
-# Deduce sample frequency from timestamps
+# Frequency analysis (sample rate deduction)
 if 'time_seconds' in df.columns and len(df) > 1:
     total_time = df['time_seconds'].iloc[-1] - df['time_seconds'].iloc[0]
     sample_rate = (len(df) - 1) / total_time if total_time > 0 else 8000
     print(f"Deduced sample rate: {sample_rate:.1f} Hz")
 else:
-    sample_rate = 80  # Fallback if no timestamp data
+    sample_rate = 80
     print(f"Using fallback sample rate: {sample_rate} Hz")
 
-freqs, psd = signal.welch(df['raw'], fs=sample_rate, nperseg=1024)
-axes[2].semilogy(freqs, psd)
+# REPLACED duplicated PSD + peak fitting blocks with helper calls
+peak_freq_final = plot_psd_with_gaussian(
+    df['raw'], sample_rate, ax_psd_raw,
+    label_base='Raw',
+    curve_color='C0',
+    peak_color='red',
+    title_suffix=f' - Fs={sample_rate:.0f}Hz'
+)
+ax_psd_raw.set_ylabel('PSD (Raw)')
+plt.setp(ax_psd_raw.get_xticklabels(), visible=False)
 
-# Find the maximum peak above 3Hz
-freq_mask = freqs > 3.0  # Only consider frequencies above 3Hz
-if np.any(freq_mask):
-    freqs_above_3hz = freqs[freq_mask]
-    psd_above_3hz = psd[freq_mask]
-    
-    # Find the maximum peak above 3Hz
-    max_peak_idx_local = np.argmax(psd_above_3hz)
-    max_peak_idx_global = np.where(freq_mask)[0][max_peak_idx_local]  # Convert to global index
-    max_peak_freq_raw = freqs_above_3hz[max_peak_idx_local]
-    max_peak_psd = psd_above_3hz[max_peak_idx_local]
-    
-    # Perform Gaussian peak fitting
-    fitted_freq, fitted_params, fit_success = fit_gaussian_peak(freqs, psd, max_peak_idx_global, window_size=15)
-    
-    if fit_success:
-        print(f"Raw peak: {max_peak_freq_raw:.2f} Hz")
-        print(f"Gaussian fitted peak: {fitted_freq:.3f} Hz (PSD: {max_peak_psd:.2e})")
-        print(f"Peak fitting improvement: {abs(fitted_freq - max_peak_freq_raw):.3f} Hz")
-        
-        # Plot both raw and fitted peaks
-        axes[2].plot(max_peak_freq_raw, max_peak_psd, 'bo', markersize=8, label=f'Raw peak: {max_peak_freq_raw:.1f} Hz')
-        axes[2].plot(fitted_freq, gaussian(fitted_freq, *fitted_params), 'ro', markersize=8, 
-                    label=f'Fitted peak: {fitted_freq:.3f} Hz')
-        axes[2].axvline(x=fitted_freq, color='red', linestyle='--', alpha=0.7)
-        
-        # Optionally plot the fitted Gaussian curve
-        if fitted_params is not None:
-            # Create fine frequency grid around the peak for smooth curve
-            freq_fine = np.linspace(fitted_freq - 2, fitted_freq + 2, 100)
-            freq_fine = freq_fine[(freq_fine >= freqs[0]) & (freq_fine <= freqs[-1])]
-            if len(freq_fine) > 0:
-                gaussian_curve = gaussian(freq_fine, *fitted_params)
-                axes[2].plot(freq_fine, gaussian_curve, 'r--', alpha=0.6, linewidth=1, label='Gaussian fit')
-        
-        peak_freq_final = fitted_freq
-    else:
-        print(f"Gaussian fitting failed, using raw peak: {max_peak_freq_raw:.2f} Hz (PSD: {max_peak_psd:.2e})")
-        axes[2].plot(max_peak_freq_raw, max_peak_psd, 'ro', markersize=8, label=f'Max peak: {max_peak_freq_raw:.1f} Hz')
-        axes[2].axvline(x=max_peak_freq_raw, color='red', linestyle='--', alpha=0.7)
-        peak_freq_final = max_peak_freq_raw
-    
-    axes[2].legend()
-else:
-    print("No frequency data above 3Hz available")
-    peak_freq_final = None
+hp_peak_freq_final = plot_psd_with_gaussian(
+    df['hp'], sample_rate, ax_psd_hp,
+    label_base='HP',
+    curve_color='g',
+    peak_color='magenta'
+)
+ax_psd_hp.set_xlabel('Frequency (Hz)')
+ax_psd_hp.set_ylabel('PSD (HP)')
 
-axes[2].set_title(f'Power Spectral Density (Raw) - Fs={sample_rate:.0f}Hz')
-axes[2].set_xlabel('Frequency (Hz)')
-axes[2].set_ylabel('PSD')
-axes[2].grid(True, alpha=0.3)
-
-plt.tight_layout()
+plt.tight_layout(rect=[0, 0, 1, 0.95])
 
 # Print statistics
 print(f"\nStatistics:")
@@ -182,6 +210,8 @@ flicker_events = df['hp'] > flicker_threshold
 print(f"flicker events detected: {flicker_events.sum()} (threshold: {flicker_threshold:.1f})")
 
 if peak_freq_final is not None:
-    print(f"Final peak frequency: {peak_freq_final:.3f} Hz")
+    print(f"Final raw peak frequency: {peak_freq_final:.3f} Hz")
+if hp_peak_freq_final is not None:
+    print(f"Final HP peak frequency: {hp_peak_freq_final:.3f} Hz")
 
 plt.show()
