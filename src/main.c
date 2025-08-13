@@ -57,7 +57,7 @@ int main()
 		sum = ReadTouchPin( GPIOA, 2, 0, iterations );
 	
 		if (avg == 0) { avg = sum;} // initialize avg on first run
-		avg = avg - (avg>>5) + sum; // simple low-pass filter
+		avg = avg - (avg>>5) + sum; // IIR low-pass filter for 
 		hp = sum -  (avg>>5); // high-pass filter
 
 		// Zero crossing detector with dead time
@@ -89,7 +89,7 @@ int main()
 			}
 		}
 		
-		hp_prev = hp;  // Store current hp for next iteration
+		hp_prev = hp;  
 
 		printf( "%d\t%d\t%d\t%d\n", (int)sum, (int)avg, (int)hp, (int)zero_cross );
 	}
