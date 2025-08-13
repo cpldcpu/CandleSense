@@ -1,11 +1,15 @@
-# Zero Parts Candle Flicker Sensor
+# Using Candle Flame Oscillations as a Clock Source
 
-Detecting candle flame flicker using only a few wires and a CH32V003 microcontroller. 
+Detecting oscillations in a candle flame triplet using only wires and a CH32V003 microcontroller. 
 
 
 <p align="center">
   <img src="media/flameosc_small.gif" alt="Device overview"/>
 </p>
+
+- **[Blog article](https://cpldcpu.com/2025/08/13/candle-flame-oscillations-as-a-clock/)**
+
+- **[Original project on HaD.io](https://hackaday.io/project/203763-deriving-1-hz-from-candle-flame-oscillations)**
 
 ## Overview
 
